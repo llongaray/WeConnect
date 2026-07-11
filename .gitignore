@@ -1,0 +1,25 @@
+# Backend
+backend/.env
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.venv/
+backend/venv/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Docker
+docker/evolution.env
+
+# Geral
+.env
+*.log
+.DS_Store
+.idea/
+.vscode/

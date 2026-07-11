@@ -1,0 +1,57 @@
+version: '3.9'
+
+services:
+  postgres:
+    container_name: moneyconnect_evolution_postgres
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution_pass
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    container_name: moneyconnect_evolution_redis
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - evolution_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  evolution-api:
+    container_name: moneyconnect_evolution_api
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file:
+      - evolution.env
+    volumes:
+      - evolution_instances:/evolution/instances
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  evolution_postgres_data:
+  evolution_redis_data:
+  evolution_instances:

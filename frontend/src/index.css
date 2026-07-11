@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --wa-green: #25d366;
+  --wa-dark: #111b21;
+  --wa-panel: #202c33;
+  --wa-chat: #0b141a;
+  --wa-bubble: #005c4b;
+  --wa-bubble-in: #202c33;
+  --wa-muted: #8696a0;
+  --wa-border: #2a3942;
+  --wa-accent: #00a884;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background-color: var(--wa-dark);
+  color: #e9edef;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Scrollbar estilo WhatsApp dark */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--wa-border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--wa-border);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--wa-muted);
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-wa-panel/80 backdrop-blur-md border border-wa-border/60;
+  }
+
+  .chat-bg-pattern {
+    background-color: var(--wa-chat);
+    background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.03) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  .nav-item-active {
+    @apply relative bg-wa-green/15 text-wa-green;
+  }
+
+  .nav-item-active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-wa-green rounded-r-full;
+    animation: slide-in-right 0.25s ease-out forwards;
+  }
+
+  .skeleton-shimmer {
+    @apply bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 bg-[length:200%_100%] animate-shimmer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
