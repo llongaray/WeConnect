@@ -1,10 +1,26 @@
-version: '3.9'
-
 services:
-  postgres:
-    container_name: moneyconnect_evolution_postgres
+  postgres-app:
+    container_name: weconnect_postgres
     image: postgres:16-alpine
-    restart: always
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: moneyconnect
+      POSTGRES_PASSWORD: moneyconnect_pass
+      POSTGRES_DB: moneyconnect
+    volumes:
+      - app_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moneyconnect -d moneyconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    container_name: weconnect_evolution_postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: evolution
       POSTGRES_PASSWORD: evolution_pass
@@ -17,26 +33,27 @@ services:
       test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
-    container_name: moneyconnect_evolution_redis
+    container_name: weconnect_redis
     image: redis:7-alpine
-    restart: always
+    restart: unless-stopped
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
-      - evolution_redis_data:/data
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   evolution-api:
-    container_name: moneyconnect_evolution_api
+    container_name: weconnect_evolution_api
     image: evoapicloud/evolution-api:v2.3.7
-    restart: always
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,10 +65,80 @@ services:
       - evolution.env
     volumes:
       - evolution_instances:/evolution/instances
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+
+  backend:
+    container_name: weconnect_backend
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    restart: unless-stopped
+    env_file:
+      - backend.env
+    depends_on:
+      postgres-app:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_media:/app/media
+      - backend_static:/app/staticfiles
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check", "--database", "default"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  celery-worker:
+    container_name: weconnect_celery_worker
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    restart: unless-stopped
+    env_file:
+      - backend.env
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "weconnect", "worker", "-l", "info", "-c", "2"]
+    volumes:
+      - backend_media:/app/media
+
+  celery-beat:
+    container_name: weconnect_celery_beat
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    restart: unless-stopped
+    env_file:
+      - backend.env
+    depends_on:
+      celery-worker:
+        condition: service_started
+    command: ["celery", "-A", "weconnect", "beat", "-l", "info"]
+
+  frontend:
+    container_name: weconnect_frontend
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
 
 volumes:
+  app_postgres_data:
   evolution_postgres_data:
-  evolution_redis_data:
+  redis_data:
   evolution_instances:
+  backend_media:
+  backend_static:

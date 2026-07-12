@@ -1,8 +1,11 @@
 import api from './api'
+import { getCompanyQueryParams } from '@/lib/companyContext'
 import type { PaginatedResponse, Team } from '@/types'
 
 export async function fetchTeams() {
-  const { data } = await api.get<PaginatedResponse<Team>>('/teams/')
+  const { data } = await api.get<PaginatedResponse<Team>>('/teams/', {
+    params: getCompanyQueryParams(),
+  })
   return data
 }
 
@@ -15,6 +18,7 @@ export async function createTeam(payload: {
   name: string
   is_active?: boolean
   channel_ids?: number[]
+  company_id?: number
 }) {
   const { data } = await api.post<Team>('/teams/', payload)
   return data

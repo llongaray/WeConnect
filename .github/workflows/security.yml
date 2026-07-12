@@ -1,0 +1,65 @@
+name: Security audit
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar pip-audit
+        run: pip install pip-audit
+      - name: Auditar dependências Python
+        run: pip-audit -r backend/requirements.txt --desc on --fail-on high
+
+  bandit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install bandit
+      - name: Análise estática Python
+        run: bandit -r backend/apps -ll
+
+  django-tests:
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_DEBUG: 'True'
+      POSTGRES_HOST: ''
+      FIELD_ENCRYPTION_KEY: 'NaUaDw2WV7z7z3lTbAhwxa3duc7vsujbdQqGEyQLUl0='
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r backend/requirements.txt
+      - name: Testes de isolamento tenant
+        working-directory: backend
+        run: python manage.py test apps.accounts.tests.test_tenant_isolation
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Auditar dependências npm
+        run: npm audit --audit-level=high

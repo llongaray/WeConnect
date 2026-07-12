@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.accounts.services.tenant_scope import validate_channel_for_company
 from apps.whatsapp.models import Channel
 
 from .flow_validation import validate_flow_definition
@@ -31,6 +32,9 @@ class BotFlowCreateSerializer(serializers.ModelSerializer):
         fields = ['channel', 'name', 'is_active', 'definition', 'start_node_id']
 
     def validate_channel(self, channel: Channel):
+        company = self.context.get('company')
+        if company is not None:
+            validate_channel_for_company(channel, company)
         if BotFlow.objects.filter(channel=channel).exists():
             raise serializers.ValidationError('Este canal já possui um fluxo de chatbot.')
         return channel

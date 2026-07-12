@@ -1,0 +1,25 @@
+# Backend Django
+backend/.env
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+backend/.venv/
+backend/venv/
+**/__pycache__/
+**/*.pyc
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Git / IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+*.md
+
+# Docker local
+docker/backend.env
+docker/evolution.env

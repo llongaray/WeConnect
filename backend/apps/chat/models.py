@@ -215,3 +215,69 @@ class Message(models.Model):
     def __str__(self):
         preview = (self.content or self.message_type)[:50]
         return f'{self.direction}: {preview}'
+
+
+class Tag(models.Model):
+    """Tag de funil vinculada à empresa."""
+
+    company = models.ForeignKey(
+        'accounts.Company',
+        on_delete=models.CASCADE,
+        related_name='tags',
+    )
+    name = models.CharField(max_length=50)
+    color = models.CharField(max_length=20, default='#00A3FF')
+    funnel_order = models.PositiveIntegerField(
+        default=0,
+        help_text='0 = fora do funil; 1, 2, 3... definem a ordem das etapas.',
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['funnel_order', 'name']
+        verbose_name = 'Tag'
+        verbose_name_plural = 'Tags'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'name'],
+                name='unique_tag_name_per_company',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.company_id})'
+
+
+class ContactTag(models.Model):
+    """Vínculo de tag com contato identificado por telefone/ID externo."""
+
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name='assignments',
+    )
+    contact_key = models.CharField(max_length=100, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='contact_tags_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Tag de contato'
+        verbose_name_plural = 'Tags de contato'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tag', 'contact_key'],
+                name='unique_tag_per_contact_key',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.tag.name} → {self.contact_key}'

@@ -13,6 +13,7 @@ import { useAuthStore } from '@/store/authStore'
 import MessageBubble from './MessageBubble'
 import ConversationActions from './ConversationActions'
 import ConversationTimeline from './ConversationTimeline'
+import ContactTagEditor from './ContactTagEditor'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -20,6 +21,11 @@ import EmptyState from '@/components/ui/EmptyState'
 import Modal from '@/components/ui/Modal'
 import { SkeletonList } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/cn'
+import {
+  conversationCategoryBadgeVariant,
+  conversationCategoryLabels,
+  getChannelTypeIcon,
+} from '@/lib/channelTypes'
 
 interface Props {
   conversation: Conversation | null
@@ -100,6 +106,17 @@ export default function ChatPanel({ conversation, onBack, onConversationUpdated 
   const displayName = conversation.contact.name || conversation.contact.phone
   const isOpen = conversation.status === 'open'
   const isAssignedToMe = conversation.assigned_to?.id === user?.id
+  const category = conversation.category
+    || (conversation.status === 'closed'
+      ? 'finalizado'
+      : conversation.status === 'open' && conversation.assigned_to
+        ? 'conversando'
+        : conversation.status === 'open' && !conversation.assigned_to && (conversation.handoff_pending || conversation.team)
+          ? 'aguardando'
+          : 'novo')
+  const ChannelIcon = conversation.channel
+    ? getChannelTypeIcon(conversation.channel.channel_type)
+    : null
 
   const canSend =
     isOpen &&
@@ -173,13 +190,28 @@ export default function ChatPanel({ conversation, onBack, onConversationUpdated 
           )}
           <Avatar name={displayName} size="sm" />
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold truncate">{displayName}</h3>
+            <div className="flex items-center gap-2 min-w-0">
+              {ChannelIcon && <ChannelIcon className="w-4 h-4 text-wa-green shrink-0" />}
+              <h3 className="font-semibold truncate">{displayName}</h3>
+            </div>
             <p className="text-xs text-wa-muted truncate">
               {conversation.contact.phone}
+              {conversation.channel && ` · ${conversation.channel.name}`}
               {conversation.team && ` · ${conversation.team.name}`}
             </p>
           </div>
-          {statusBadge()}
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <Badge variant={conversationCategoryBadgeVariant[category]} className="text-[10px]">
+              {conversationCategoryLabels[category]}
+            </Badge>
+            {statusBadge()}
+          </div>
+        </div>
+        <div className="mt-2">
+          <ContactTagEditor
+            conversation={conversation}
+            onUpdated={onConversationUpdated}
+          />
         </div>
         <div className="mt-2 pt-2 border-t border-wa-border/60">
           <ConversationActions

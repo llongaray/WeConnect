@@ -1,48 +1,67 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchConversation, fetchConversations } from '@/services/chat'
 import { fetchChannels } from '@/services/channels'
+import { getActiveCompanyId } from '@/lib/companyContext'
 import { useAuthStore } from '@/store/authStore'
-import type { Conversation } from '@/types'
+import type { Conversation, ConversationCategory } from '@/types'
 import ConversationList from '@/components/chat/ConversationList'
 import ChatPanel from '@/components/chat/ChatPanel'
+import CompanyScopePrompt, { useRequiresCompanyScope } from '@/components/admin/CompanyScopePrompt'
 import { cn } from '@/lib/cn'
 
 type MobileView = 'list' | 'chat'
 
 export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [filter, setFilter] = useState('open')
-  const [channelFilter, setChannelFilter] = useState<number | ''>('')
+  const [filter, setFilter] = useState<ConversationCategory>('conversando')
+  const [channelFilter, setChannelFilter] = useState<number[]>([])
   const [mobileView, setMobileView] = useState<MobileView>('list')
   const [selectedOverride, setSelectedOverride] = useState<Conversation | null>(null)
   const isAdmin = useAuthStore((s) => s.isAdmin())
+  const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId)
+  const companyId = getActiveCompanyId()
+  const showScopePrompt = useRequiresCompanyScope()
+  const queriesEnabled = !showScopePrompt
+
+  useEffect(() => {
+    setSelectedId(null)
+    setSelectedOverride(null)
+    setChannelFilter([])
+    setMobileView('list')
+  }, [selectedCompanyId])
 
   const { data: channelsData } = useQuery({
-    queryKey: ['channels'],
-    queryFn: fetchChannels,
-    enabled: isAdmin,
+    queryKey: ['channels', companyId],
+    queryFn: () => fetchChannels(),
+    enabled: queriesEnabled && isAdmin,
   })
 
-  const listFilter = filter === 'open' ? undefined : filter
-
   const { data, isLoading } = useQuery({
-    queryKey: ['conversations', filter, channelFilter],
+    queryKey: ['conversations', companyId, filter, channelFilter],
     queryFn: () =>
       fetchConversations({
-        filter: listFilter,
-        channelId: channelFilter ? Number(channelFilter) : undefined,
-        status:
-          filter === 'closed' ? 'closed' : filter === 'open' ? 'open' : undefined,
+        category: filter,
+        channelIds: channelFilter.length ? channelFilter : undefined,
       }),
-    refetchInterval: 15000,
+    enabled: queriesEnabled,
+    refetchInterval: queriesEnabled ? 15000 : false,
   })
 
   const { data: selectedFromApi } = useQuery({
-    queryKey: ['conversation', selectedId],
+    queryKey: ['conversation', companyId, selectedId],
     queryFn: () => fetchConversation(selectedId!),
-    enabled: !!selectedId,
+    enabled: queriesEnabled && !!selectedId,
   })
+
+  if (showScopePrompt) {
+    return (
+      <CompanyScopePrompt
+        title="Selecione uma empresa"
+        description="Use o seletor de empresa no topo para visualizar a inbox."
+      />
+    )
+  }
 
   const conversations = data?.results || []
   const selected =

@@ -41,10 +41,13 @@ class EvolutionProvider(ChannelProvider):
   def instance_name(self) -> str:
     return self.channel.evolution_instance_name
 
-  def webhook_url(self) -> str:
+  def webhook_url(self, *, include_secret: bool = False) -> str:
     base = settings.EVOLUTION_WEBHOOK_BASE_URL.rstrip('/')
-    secret = self.channel.ensure_webhook_secret()
-    return f'{base}/evolution/{self.channel.pk}/?secret={secret}'
+    url = f'{base}/evolution/{self.channel.pk}/'
+    if include_secret:
+      secret = self.channel.ensure_webhook_secret()
+      return f'{url}?secret={secret}'
+    return url
 
   def _integration(self) -> str:
     # Normal e Business conectam via QR Code (Baileys / app no celular)

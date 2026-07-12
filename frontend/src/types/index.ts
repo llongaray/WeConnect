@@ -1,9 +1,73 @@
+export interface CompanySummary {
+  id: number
+  code: string
+  trade_name: string
+}
+
+export interface CompanyLimits {
+  max_supervisors: number
+  max_atendentes: number
+  max_teams: number
+  max_channels: number
+}
+
+export interface CompanyUsage {
+  supervisors: number
+  atendentes: number
+  gestores: number
+  teams: number
+  channels: number
+  limits: CompanyLimits
+}
+
+export interface Company {
+  id: number
+  code: string
+  legal_name: string
+  trade_name: string
+  cnpj: string
+  address: string
+  contact_email: string
+  billing_email: string
+  contact_phone: string
+  billing_phone: string
+  is_active: boolean
+  max_supervisors: number
+  max_atendentes: number
+  max_teams: number
+  max_channels: number
+  usage: CompanyUsage
+  created_at: string
+  updated_at: string
+}
+
+export interface AuditLog {
+  id: number
+  actor: number | null
+  actor_name: string
+  company: number | null
+  action: string
+  entity_type: string
+  entity_id: string
+  entity_label: string
+  metadata: Record<string, unknown>
+  ip_address: string | null
+  created_at: string
+}
+
 export interface User {
   id: number
   username: string
   first_name: string
   last_name: string
-  role: 'admin' | 'supervisor' | 'atendente'
+  email: string
+  cpf: string
+  phone: string
+  role: 'gestor' | 'supervisor' | 'atendente'
+  is_active: boolean
+  is_superuser?: boolean
+  is_staff?: boolean
+  company: CompanySummary | null
 }
 
 export interface TeamChannel {
@@ -22,6 +86,7 @@ export interface Team {
   id: number
   name: string
   is_active: boolean
+  company_id?: number
   channels: TeamChannel[]
   memberships: TeamMembership[]
   members_count: number
@@ -48,7 +113,30 @@ export interface TeamMemberOption {
   team_role: string
 }
 
-export type ChannelType = 'evolution_normal' | 'evolution_business' | 'meta_cloud'
+export type ChannelType =
+  | 'evolution_normal'
+  | 'evolution_business'
+  | 'meta_cloud'
+  | 'meta_messenger'
+  | 'meta_instagram'
+
+export interface MetaCredentials {
+  phone_number_id?: string
+  access_token?: string
+  verify_token?: string
+  waba_id?: string
+}
+
+export interface MetaMessagingCredentials {
+  app_id?: string
+  app_secret?: string
+  page_id?: string
+  page_access_token?: string
+  verify_token?: string
+  instagram_business_account_id?: string
+  page_name?: string
+  instagram_username?: string
+}
 
 export interface Channel {
   id: number
@@ -59,7 +147,12 @@ export interface Channel {
   phone: string
   qrcode_base64: string
   is_active: boolean
+  is_archived?: boolean
+  company_id: number
   webhook_url: string
+  webhook_header?: string | null
+  meta_credentials?: MetaCredentials | null
+  meta_messaging_credentials?: MetaMessagingCredentials | null
   created_at: string
   updated_at: string
   detail?: string
@@ -73,6 +166,39 @@ export interface Contact {
   profile_pic_url: string
   created_at: string
   updated_at: string
+}
+
+export type ConversationCategory = 'novo' | 'aguardando' | 'conversando' | 'finalizado'
+
+export interface ContactTag {
+  id: number
+  name: string
+  color: string
+}
+
+export interface Tag {
+  id: number
+  name: string
+  color: string
+  funnel_order: number
+  is_active: boolean
+  contacts_count?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface FunnelStageContact {
+  contact_key: string
+  name: string
+  phone: string
+  channel_name: string
+  active_conversations: number
+}
+
+export interface FunnelStage {
+  tag: Pick<Tag, 'id' | 'name' | 'color' | 'funnel_order'>
+  contacts_count: number
+  contacts: FunnelStageContact[]
 }
 
 export interface Conversation {
@@ -89,6 +215,8 @@ export interface Conversation {
   unread_count: number
   last_message_at: string | null
   last_message_preview: string
+  category?: ConversationCategory
+  contact_tags?: ContactTag[]
   recent_events?: ConversationEvent[]
   created_at: string
   updated_at: string
@@ -128,6 +256,11 @@ export interface CreateChannelPayload {
   access_token?: string
   verify_token?: string
   waba_id?: string
+  app_id?: string
+  app_secret?: string
+  page_id?: string
+  page_access_token?: string
+  instagram_business_account_id?: string
 }
 
 export type BotNodeType = 'message' | 'decision' | 'menu' | 'assign' | 'end'
@@ -181,21 +314,33 @@ export interface UpdateBotFlowPayload {
   start_node_id?: string
 }
 
-export type DeepSeekStatus = 'connected' | 'disconnected' | 'error'
+export type AIProviderType = 'deepseek' | 'openai' | 'anthropic' | 'gemini'
+export type AIProviderStatus = 'connected' | 'disconnected' | 'error'
 
-export interface DeepSeekConfig {
+export interface AIProviderConfig {
+  provider_type: AIProviderType
+  label: string
   base_url: string
   chat_model: string
   reasoner_model: string
   chat_endpoint: string
   balance_endpoint: string
-  status: DeepSeekStatus
+  company_id: number
+  status: AIProviderStatus
+  is_default: boolean
+  configured: boolean
   api_key_set: boolean
   api_key_masked: string
   last_validated_at: string | null
   last_error: string
-  updated_at: string
+  updated_at: string | null
 }
+
+/** @deprecated Use AIProviderConfig */
+export type DeepSeekStatus = AIProviderStatus
+
+/** @deprecated Use AIProviderConfig */
+export interface DeepSeekConfig extends AIProviderConfig {}
 
 export interface ChatAssistantMessage {
   role: 'user' | 'assistant'
@@ -219,4 +364,41 @@ export interface CurrentFlowContext {
   nodes: BotFlowDefinition['nodes']
   edges: BotFlowDefinition['edges']
   start_node_id: string
+}
+
+export interface PlatformOperator {
+  id: number
+  username: string
+  first_name: string
+  last_name: string
+  display_name: string
+}
+
+export interface PlatformRoom {
+  id: number
+  kind: 'group' | 'direct'
+  name: string
+  slug: string | null
+  display_name: string
+  unread_count: number
+  last_message_at: string | null
+  peer: Pick<PlatformOperator, 'id' | 'username' | 'first_name' | 'last_name'> | null
+  created_at: string
+}
+
+export interface PlatformMessage {
+  id: number
+  room: number
+  sender: User
+  content: string
+  message_type: 'text' | 'image' | 'audio' | 'file'
+  media_file: string | null
+  mentioned_usernames: string[]
+  created_at: string
+}
+
+export interface PlatformUnreadSummary {
+  unread_messages: number
+  unread_mentions: number
+  total: number
 }

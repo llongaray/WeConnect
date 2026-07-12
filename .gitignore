@@ -16,6 +16,7 @@ frontend/tsconfig.tsbuildinfo
 
 # Docker
 docker/evolution.env
+docker/backend.env
 
 # Geral
 .env

@@ -1,4 +1,4 @@
-# Generated manually for MoneyConnect
+# Generated manually for WeConnect
 
 import django.contrib.auth.models
 import django.contrib.auth.validators

@@ -60,43 +60,54 @@ def _resolve_evolution_contact_ids(msg_data: dict) -> tuple[str, str]:
   return contact_jid, phone
 
 
+def _chat_company_group(company_id: int) -> str:
+    return f'chat_company_{company_id}'
+
+
+def _chat_superuser_group() -> str:
+    return 'chat_superuser'
+
+
+def _broadcast_chat_event(company_id: int, event: str, data: dict) -> None:
+    channel_layer = get_channel_layer()
+    if not channel_layer:
+        return
+    payload = {
+        'type': 'chat.event',
+        'event': event,
+        'data': data,
+    }
+    async_to_sync(channel_layer.group_send)(_chat_company_group(company_id), payload)
+    async_to_sync(channel_layer.group_send)(_chat_superuser_group(), payload)
+
+
 def broadcast_conversation_updated(conversation: Conversation):
-  channel_layer = get_channel_layer()
-  if not channel_layer:
-    return
   from .serializers import ConversationSerializer
 
   payload = ConversationSerializer(conversation).data
-  async_to_sync(channel_layer.group_send)(
-    'chat_global',
-    {
-      'type': 'chat.event',
-      'event': 'conversation.updated',
-      'data': {
-        'conversation': payload,
-        'conversation_id': conversation.id,
+  company_id = conversation.channel.company_id
+  _broadcast_chat_event(
+      company_id,
+      'conversation.updated',
+      {
+          'conversation': payload,
+          'conversation_id': conversation.id,
       },
-    },
   )
 
 
 def _broadcast_message(message: Message, conversation: Conversation):
-  channel_layer = get_channel_layer()
-  if not channel_layer:
-    return
   from .serializers import MessageSerializer
 
   payload = MessageSerializer(message).data
-  async_to_sync(channel_layer.group_send)(
-    'chat_global',
-    {
-      'type': 'chat.event',
-      'event': 'message.new',
-      'data': {
-        'message': payload,
-        'conversation_id': conversation.id,
+  company_id = conversation.channel.company_id
+  _broadcast_chat_event(
+      company_id,
+      'message.new',
+      {
+          'message': payload,
+          'conversation_id': conversation.id,
       },
-    },
   )
 
 
@@ -115,19 +126,20 @@ class ChatWebhookService:
       cls.save_inbound_message(channel, normalized)
 
   @classmethod
-  def handle_evolution_send_message(cls, data):
+  def handle_evolution_send_message(cls, channel: Channel, data):
     messages = data if isinstance(data, list) else [data]
     for msg_data in messages:
       if not isinstance(msg_data, dict):
         continue
       normalized = cls.parse_evolution_message(msg_data)
       if normalized.external_id:
-        Message.objects.filter(external_id=normalized.external_id).update(
-          status=Message.DeliveryStatus.SENT
-        )
+        Message.objects.filter(
+          external_id=normalized.external_id,
+          conversation__channel=channel,
+        ).update(status=Message.DeliveryStatus.SENT)
 
   @classmethod
-  def handle_evolution_messages_update(cls, data):
+  def handle_evolution_messages_update(cls, channel: Channel, data):
     updates = data if isinstance(data, list) else [data]
     status_map = {
       0: Message.DeliveryStatus.PENDING,
@@ -146,7 +158,10 @@ class ChatWebhookService:
       ack = update.get('update', {}).get('status') or update.get('status')
       if ack is not None:
         new_status = status_map.get(int(ack), Message.DeliveryStatus.SENT)
-        Message.objects.filter(external_id=external_id).update(status=new_status)
+        Message.objects.filter(
+          external_id=external_id,
+          conversation__channel=channel,
+        ).update(status=new_status)
 
   @classmethod
   def handle_meta_webhook(cls, channel: Channel, payload: dict):
@@ -158,6 +173,57 @@ class ChatWebhookService:
           cls.save_inbound_message(channel, normalized)
         for status_data in value.get('statuses', []):
           cls._handle_meta_status(status_data)
+
+  @classmethod
+  def handle_meta_messaging_webhook(cls, channel: Channel, payload: dict):
+    """Processa webhooks Messenger (page) e Instagram (instagram)."""
+    for entry in payload.get('entry', []):
+      for event in entry.get('messaging', []):
+        if 'message' not in event:
+          continue
+        normalized = cls.parse_meta_messaging_event(channel, event)
+        if normalized:
+          cls.save_inbound_message(channel, normalized)
+
+  @classmethod
+  def parse_meta_messaging_event(cls, channel: Channel, event: dict) -> NormalizedMessage | None:
+    message = event.get('message', {})
+    if message.get('is_echo'):
+      return None
+
+    sender = event.get('sender', {})
+    sender_id = sender.get('id', '')
+    if not sender_id:
+      return None
+
+    external_id = message.get('mid', '') or message.get('id', '')
+    msg_type = Message.MessageType.TEXT
+    content = ''
+
+    if 'text' in message:
+      content = message['text'].get('body', '')
+    elif 'attachments' in message:
+      attachments = message.get('attachments') or []
+      if attachments:
+        att_type = attachments[0].get('type', 'file')
+        type_map = {
+          'image': Message.MessageType.IMAGE,
+          'video': Message.MessageType.VIDEO,
+          'audio': Message.MessageType.AUDIO,
+          'file': Message.MessageType.DOCUMENT,
+        }
+        msg_type = type_map.get(att_type, Message.MessageType.OTHER)
+        content = attachments[0].get('payload', {}).get('url', '') or att_type
+
+    return NormalizedMessage(
+      external_id=external_id,
+      external_contact_id=sender_id,
+      contact_name=sender_id,
+      phone='',
+      message_type=msg_type,
+      content=content,
+      raw_data=event,
+    )
 
   @classmethod
   def _handle_meta_status(cls, status_data: dict):
@@ -262,12 +328,9 @@ class ChatWebhookService:
     created_new = created
 
     def process_bot():
-      from apps.automation.engine import maybe_process_chatbot
-      from apps.chat.models import Conversation as ConvModel, Message as MsgModel
+      from apps.automation.tasks import dispatch_chatbot_processing
 
-      conv = ConvModel.objects.select_related('channel', 'contact').get(pk=conversation_id)
-      msg = MsgModel.objects.get(pk=message_id)
-      maybe_process_chatbot(conv, msg, force_restart=created_new)
+      dispatch_chatbot_processing(conversation_id, message_id, force_restart=created_new)
 
     transaction.on_commit(process_bot)
 

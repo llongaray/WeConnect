@@ -1,36 +1,152 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { User } from '@/types'
+import type { CompanySummary, User } from '@/types'
+import { defaultCapabilities, type Capabilities } from '@/lib/capabilities'
+
+export type AccessMode = 'setup_only' | 'full'
+
+export interface SessionFlags {
+  requiresTotpSetup?: boolean
+  totpEnabled?: boolean
+  accessMode?: AccessMode
+  requiresPrivacyAcceptance?: boolean
+  capabilities?: Capabilities
+  isWeconnectSupport?: boolean
+}
 
 interface AuthState {
-  accessToken: string | null
-  refreshToken: string | null
   user: User | null
-  setAuth: (access: string, refresh: string, user: User) => void
-  setAccessToken: (token: string) => void
+  isSuperUser: boolean
+  isWeconnectSupport: boolean
+  capabilities: Capabilities
+  selectedCompanyId: number | null
+  setupToken: string | null
+  isHydrated: boolean
+  requiresTotpSetup: boolean
+  totpEnabled: boolean
+  accessMode: AccessMode
+  requiresPrivacyAcceptance: boolean
+  setAuth: (user: User, isSuperUser?: boolean, session?: SessionFlags) => void
+  setSessionFlags: (flags: SessionFlags) => void
+  setSetupToken: (token: string | null) => void
+  setSelectedCompanyId: (companyId: number | null) => void
+  setHydrated: (value: boolean) => void
   logout: () => void
-  isAdmin: () => boolean
+  hasCapability: (key: keyof Capabilities) => boolean
+  isPlatformAdmin: () => boolean
+  isGestor: () => boolean
   isSupervisor: () => boolean
+  canManageTenant: () => boolean
+  hasCompanyScope: () => boolean
+  isAdmin: () => boolean
   canTransfer: () => boolean
+  getCompanyContext: () => CompanySummary | null
+}
+
+function resolveSuperUser(user: User | null, explicit?: boolean) {
+  return Boolean(explicit ?? user?.is_superuser)
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      accessToken: null,
-      refreshToken: null,
       user: null,
-      setAuth: (access, refresh, user) =>
-        set({ accessToken: access, refreshToken: refresh, user }),
-      setAccessToken: (token) => set({ accessToken: token }),
-      logout: () => set({ accessToken: null, refreshToken: null, user: null }),
-      isAdmin: () => get().user?.role === 'admin',
+      isSuperUser: false,
+      isWeconnectSupport: false,
+      capabilities: defaultCapabilities,
+      selectedCompanyId: null,
+      setupToken: null,
+      isHydrated: false,
+      requiresTotpSetup: false,
+      totpEnabled: false,
+      accessMode: 'full',
+      requiresPrivacyAcceptance: false,
+      setAuth: (user, isSuperUser, session) => {
+        const superUser = resolveSuperUser(user, isSuperUser)
+        const support = session?.isWeconnectSupport ?? Boolean(user.is_staff && !superUser)
+        set({
+          user: { ...user, is_superuser: superUser },
+          isSuperUser: superUser,
+          isWeconnectSupport: support,
+          capabilities: session?.capabilities ?? get().capabilities,
+          selectedCompanyId: superUser || support
+            ? get().selectedCompanyId
+            : (user.company?.id ?? null),
+          requiresTotpSetup: session?.requiresTotpSetup ?? get().requiresTotpSetup,
+          totpEnabled: session?.totpEnabled ?? get().totpEnabled,
+          accessMode: session?.accessMode ?? get().accessMode,
+          requiresPrivacyAcceptance:
+            session?.requiresPrivacyAcceptance ?? get().requiresPrivacyAcceptance,
+        })
+      },
+      setSessionFlags: (flags) =>
+        set({
+          requiresTotpSetup: flags.requiresTotpSetup ?? get().requiresTotpSetup,
+          totpEnabled: flags.totpEnabled ?? get().totpEnabled,
+          accessMode: flags.accessMode ?? get().accessMode,
+          requiresPrivacyAcceptance:
+            flags.requiresPrivacyAcceptance ?? get().requiresPrivacyAcceptance,
+          capabilities: flags.capabilities ?? get().capabilities,
+          isWeconnectSupport: flags.isWeconnectSupport ?? get().isWeconnectSupport,
+        }),
+      setSetupToken: (token) => set({ setupToken: token }),
+      setSelectedCompanyId: (companyId) => set({ selectedCompanyId: companyId }),
+      setHydrated: (value) => set({ isHydrated: value }),
+      logout: () =>
+        set({
+          user: null,
+          isSuperUser: false,
+          isWeconnectSupport: false,
+          capabilities: defaultCapabilities,
+          selectedCompanyId: null,
+          setupToken: null,
+          requiresTotpSetup: false,
+          totpEnabled: false,
+          accessMode: 'full',
+          requiresPrivacyAcceptance: false,
+        }),
+      hasCapability: (key) => Boolean(get().capabilities[key]),
+      isPlatformAdmin: () => get().isSuperUser,
+      isGestor: () => !get().isSuperUser && !get().isWeconnectSupport && get().user?.role === 'gestor',
       isSupervisor: () => get().user?.role === 'supervisor',
-      canTransfer: () => {
-        const role = get().user?.role
-        return role === 'admin' || role === 'supervisor'
+      canManageTenant: () => get().hasCapability('manage_tenant'),
+      hasCompanyScope: () => {
+        const state = get()
+        if (state.user?.company?.id) return true
+        return (state.isSuperUser || state.isWeconnectSupport) && Boolean(state.selectedCompanyId)
+      },
+      isAdmin: () => {
+        const state = get()
+        if (state.isSuperUser) return true
+        if (state.user?.role === 'gestor') return true
+        if (state.isWeconnectSupport && state.hasCompanyScope()) return true
+        return false
+      },
+      canTransfer: () => get().hasCapability('transfer_conversations'),
+      getCompanyContext: () => {
+        const state = get()
+        if (state.user?.company) return state.user.company
+        return null
       },
     }),
-    { name: 'moneyconnect-auth' },
+    {
+      name: 'weconnect-auth',
+      partialize: (state) => ({
+        selectedCompanyId: state.selectedCompanyId,
+        setupToken: state.setupToken,
+        ...(state.setupToken
+          ? {
+              user: state.user,
+              isSuperUser: state.isSuperUser,
+              isWeconnectSupport: state.isWeconnectSupport,
+              capabilities: state.capabilities,
+              requiresTotpSetup: state.requiresTotpSetup,
+              totpEnabled: state.totpEnabled,
+              accessMode: state.accessMode,
+              requiresPrivacyAcceptance: state.requiresPrivacyAcceptance,
+            }
+          : {}),
+      }),
+    },
   ),
 )

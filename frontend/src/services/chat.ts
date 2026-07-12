@@ -2,6 +2,7 @@ import api from './api'
 import type {
   Contact,
   Conversation,
+  ConversationCategory,
   ConversationEvent,
   CursorPaginatedMessages,
   PaginatedResponse,
@@ -10,17 +11,24 @@ import type {
 } from '@/types'
 
 export interface FetchConversationsParams {
+  category?: ConversationCategory
   filter?: string
-  channelId?: number
+  channelIds?: number[]
   status?: 'open' | 'closed'
 }
 
 export async function fetchConversations(params: FetchConversationsParams = {}) {
-  const query: Record<string, string | number> = {}
+  const query: Record<string, string | number | number[]> = {}
+  if (params.category) query.category = params.category
   if (params.filter) query.filter = params.filter
-  if (params.channelId) query.channel = params.channelId
+  if (params.channelIds?.length) query.channel = params.channelIds
   if (params.status) query.status = params.status
-  const { data } = await api.get<PaginatedResponse<Conversation>>('/conversations/', { params: query })
+  const { data } = await api.get<PaginatedResponse<Conversation>>('/conversations/', {
+    params: query,
+    paramsSerializer: {
+      indexes: null,
+    },
+  })
   return data
 }
 
@@ -115,6 +123,15 @@ export async function fetchContacts(search?: string) {
     params: search ? { search } : {},
   })
   return data
+}
+
+export async function exportContactData(contactId: number) {
+  const { data } = await api.get<Record<string, unknown>>(`/contacts/${contactId}/export-data/`)
+  return data
+}
+
+export async function eraseContactData(contactId: number) {
+  await api.post(`/contacts/${contactId}/erase/`)
 }
 
 export async function fetchUsers() {

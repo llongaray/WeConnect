@@ -11,11 +11,15 @@ from apps.automation.flow_validation import (
     validate_flow_semantics,
 )
 
-from .deepseek_client import DeepSeekAPIError, chat_completion
+from .deepseek_client import AIAPIError, AINotConnectedError, chat_completion
+
+# Compatibilidade legada
+DeepSeekAPIError = AIAPIError
+DeepSeekNotConnectedError = AINotConnectedError
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Você é um assistente que cria fluxos de chatbot WhatsApp para o MoneyConnect.
+SYSTEM_PROMPT = """Você é um assistente que cria fluxos de chatbot WhatsApp para o WeConnect.
 
 Responda SEMPRE em JSON válido com este formato exato:
 {
@@ -520,9 +524,11 @@ def _current_flow_warning(current_flow: dict | None) -> str | None:
     return None
 
 
-def _call_deepseek(api_messages: list[dict]) -> dict:
+def _call_ai(api_messages: list[dict], company, provider_type: str | None = None) -> dict:
     raw = chat_completion(
         api_messages,
+        company=company,
+        provider_type=provider_type,
         response_format={'type': 'json_object'},
         temperature=0.2,
         max_tokens=4096,
@@ -533,9 +539,11 @@ def _call_deepseek(api_messages: list[dict]) -> dict:
 def generate_bot_flow(
     messages: list[dict],
     current_flow: dict | None = None,
+    company=None,
+    provider_type: str | None = None,
 ) -> dict:
     """
-    Gera fluxo via DeepSeek.
+    Gera fluxo via canal de IA configurado.
     Retorna { reply, flow?, applied }.
     """
     api_messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
@@ -563,8 +571,8 @@ def generate_bot_flow(
 
     for attempt in range(2):
         try:
-            parsed = _call_deepseek(api_messages)
-        except (json.JSONDecodeError, DeepSeekAPIError) as exc:
+            parsed = _call_ai(api_messages, company, provider_type)
+        except (json.JSONDecodeError, AIAPIError) as exc:
             logger.exception('Falha ao gerar fluxo: %s', exc)
             return {
                 'reply': f'Não consegui gerar o fluxo: {exc}',

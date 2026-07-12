@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 import { Send, Sparkles } from 'lucide-react'
-import { generateBotFlow } from '@/services/deepseek'
+import { generateBotFlow } from '@/services/aiProviders'
 import type { ChatAssistantMessage, CurrentFlowContext, GeneratedBotFlow } from '@/types'
 import Button from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
@@ -49,7 +49,7 @@ export default function FlowAssistantChat({
     onError: (err: unknown) => {
       if (axios.isAxiosError(err)) {
         if (err.response?.status === 503) {
-          setError('DeepSeek não conectado.')
+          setError('Nenhum canal de IA conectado.')
           return
         }
         const detail = err.response?.data?.detail
@@ -80,7 +80,7 @@ export default function FlowAssistantChat({
         <Sparkles className="w-4 h-4 text-wa-green shrink-0" />
         <div>
           <h3 className="text-sm font-semibold">Assistente IA</h3>
-          <p className="text-[10px] text-wa-muted">DeepSeek gera o fluxo</p>
+          <p className="text-[10px] text-wa-muted">IA configurada gera o fluxo</p>
         </div>
       </div>
 
@@ -109,9 +109,9 @@ export default function FlowAssistantChat({
       {error && (
         <div className="px-3 pb-2">
           <p className="text-xs text-red-400">{error}</p>
-          {error.includes('não conectado') && (
-            <Link to="/admin/deepseek" className="text-xs text-wa-green hover:underline">
-              Configurar DeepSeek
+          {error.includes('IA') && (
+            <Link to="/admin/ai" className="text-xs text-wa-green hover:underline">
+              Configurar IA
             </Link>
           )}
         </div>

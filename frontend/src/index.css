@@ -3,20 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --wa-green: #25d366;
-  --wa-dark: #111b21;
-  --wa-panel: #202c33;
-  --wa-chat: #0b141a;
-  --wa-bubble: #005c4b;
-  --wa-bubble-in: #202c33;
-  --wa-muted: #8696a0;
-  --wa-border: #2a3942;
-  --wa-accent: #00a884;
+  --wa-green: #00a3ff;
+  --wa-dark: #020617;
+  --wa-panel: #0a1628;
+  --wa-chat: #050a14;
+  --wa-bubble: #0b4f8a;
+  --wa-bubble-in: #0f1d32;
+  --wa-muted: #94a3b8;
+  --wa-border: #1e3a5f;
+  --wa-accent: #ffb800;
+  --aray-primary: #00a3ff;
+  --aray-accent: #ffb800;
 }
 
 body {
   margin: 0;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--wa-dark);
   color: #e9edef;
 }
@@ -25,7 +27,7 @@ body {
   min-height: 100vh;
 }
 
-/* Scrollbar estilo WhatsApp dark */
+/* Scrollbar tema Aray dark */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--wa-border) transparent;
@@ -56,7 +58,7 @@ body {
 
   .chat-bg-pattern {
     background-color: var(--wa-chat);
-    background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.03) 1px, transparent 0);
+    background-image: radial-gradient(circle at 1px 1px, rgba(0, 163, 255, 0.04) 1px, transparent 0);
     background-size: 24px 24px;
   }
 
@@ -68,6 +70,26 @@ body {
     content: '';
     @apply absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-wa-green rounded-r-full;
     animation: slide-in-right 0.25s ease-out forwards;
+  }
+
+  .nav-item-active-collapsed {
+    @apply relative bg-wa-green/15 text-wa-green;
+  }
+
+  .nav-item-active-collapsed::before {
+    content: '';
+    @apply absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-wa-green rounded-r-full;
+  }
+
+  .sidebar-tooltip {
+    @apply pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 z-50
+      whitespace-nowrap rounded-md bg-wa-dark border border-wa-border px-2.5 py-1.5
+      text-xs text-white opacity-0 shadow-lg transition-opacity duration-150;
+  }
+
+  .group:hover .sidebar-tooltip,
+  .group:focus-visible .sidebar-tooltip {
+    @apply opacity-100;
   }
 
   .skeleton-shimmer {

@@ -1,14 +1,25 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { KeyRound, Save, Sparkles } from 'lucide-react'
+import {
+  CheckCircle2,
+  Clock,
+  KeyRound,
+  Link2,
+  Save,
+  Server,
+  Sparkles,
+} from 'lucide-react'
 import { fetchDeepSeekConfig, saveDeepSeekToken } from '@/services/deepseek'
 import type { DeepSeekStatus } from '@/types'
+import CompanyScopePrompt, { useRequiresCompanyScope } from '@/components/admin/CompanyScopePrompt'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import PageHeader from '@/components/ui/PageHeader'
+import Skeleton from '@/components/ui/Skeleton'
+import { getActiveCompanyId } from '@/lib/companyContext'
 
 function statusBadge(status: DeepSeekStatus, pulse = false) {
   const map: Record<DeepSeekStatus, { label: string; variant: 'success' | 'default' | 'danger' }> = {
@@ -28,10 +39,15 @@ export default function DeepSeekPage() {
   const queryClient = useQueryClient()
   const [apiKey, setApiKey] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const companyId = getActiveCompanyId()
+  const showScopePrompt = useRequiresCompanyScope()
+  const queriesEnabled = !showScopePrompt
 
   const { data: config, isLoading, isError } = useQuery({
-    queryKey: ['deepseek-config'],
+    queryKey: ['deepseek-config', companyId],
     queryFn: fetchDeepSeekConfig,
+    enabled: queriesEnabled,
     retry: false,
   })
 
@@ -40,6 +56,8 @@ export default function DeepSeekPage() {
     onSuccess: () => {
       setSaveError('')
       setApiKey('')
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
       queryClient.invalidateQueries({ queryKey: ['deepseek-config'] })
     },
     onError: (err: unknown) => {
@@ -59,94 +77,157 @@ export default function DeepSeekPage() {
     ? new Date(config.last_validated_at).toLocaleString('pt-BR')
     : null
 
-  return (
-    <div className="h-full p-6 overflow-y-auto">
-      <PageHeader
-        title="DeepSeek"
-        description="Configure o token da API. URLs e modelos são definidos automaticamente pelo sistema."
+  const configRows = [
+    ['Base URL', config?.base_url ?? 'https://api.deepseek.com'],
+    ['Modelo Chat', config?.chat_model ?? 'deepseek-chat'],
+    ['Modelo Pensamento', config?.reasoner_model ?? 'deepseek-reasoner'],
+    ['Endpoint Chat', config?.chat_endpoint ?? 'https://api.deepseek.com/v1/chat/completions'],
+  ]
+
+  if (showScopePrompt) {
+    return (
+      <CompanyScopePrompt
+        title="Selecione uma empresa"
+        description="Use o seletor de empresa no topo para configurar a integração DeepSeek."
       />
+    )
+  }
 
-      {isError && (
-        <p className="text-yellow-400 text-sm mb-4">
-          API indisponível. Reinicie o backend e execute: python manage.py migrate
-        </p>
-      )}
+  return (
+    <div className="h-full p-4 sm:p-6 overflow-y-auto">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <PageHeader
+          title="DeepSeek"
+          description="Integre a IA DeepSeek informando apenas o token. URLs e modelos são gerenciados pelo sistema."
+        />
 
-      <div className="grid gap-6 max-w-2xl">
-        <Card padding="lg" className="border-wa-green/20">
-          <div className="flex items-center justify-between gap-4 mb-4">
+        {isError && (
+          <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm text-amber-200">
+            API indisponível. Reinicie o backend e execute as migrations se necessário.
+          </div>
+        )}
+
+        <Card
+          padding="lg"
+          className="border-wa-green/20 bg-gradient-to-br from-wa-panel to-wa-dark/60"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-wa-green/20 flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-wa-green" />
+              <div className="w-12 h-12 rounded-xl bg-wa-green/20 flex items-center justify-center">
+                <Sparkles className="w-6 h-6 text-wa-green" />
               </div>
               <div>
-                <h3 className="font-semibold">Status da conexão</h3>
-                <p className="text-xs text-wa-muted">Validação via API DeepSeek</p>
+                <h3 className="text-base font-semibold text-white">Status da conexão</h3>
+                <p className="text-xs text-wa-muted">Validação automática via API DeepSeek</p>
               </div>
             </div>
-            {!isLoading && config && statusBadge(config.status, true)}
-            {isLoading && <Badge variant="default">Carregando...</Badge>}
+            {isLoading ? (
+              <Skeleton className="h-6 w-24 rounded-full" />
+            ) : config ? (
+              statusBadge(config.status, true)
+            ) : (
+              <Badge variant="default">Indisponível</Badge>
+            )}
           </div>
 
-          {config?.api_key_set && config.api_key_masked && (
-            <p className="text-sm text-wa-muted mb-2">
-              Token atual: <span className="font-mono text-gray-300">{config.api_key_masked}</span>
-            </p>
-          )}
-          {lastValidated && (
-            <p className="text-xs text-wa-muted">Última validação: {lastValidated}</p>
-          )}
-          {config?.last_error && config.status === 'error' && (
-            <p className="text-sm text-red-400 mt-2">{config.last_error}</p>
+          {!isLoading && config && (
+            <div className="mt-4 pt-4 border-t border-wa-border/60 space-y-2 text-sm">
+              {config.api_key_set && config.api_key_masked && (
+                <p className="text-wa-muted">
+                  Token: <span className="font-mono text-gray-300">{config.api_key_masked}</span>
+                </p>
+              )}
+              {lastValidated && (
+                <p className="text-xs text-wa-muted inline-flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  Última validação: {lastValidated}
+                </p>
+              )}
+              {config.last_error && config.status === 'error' && (
+                <p className="text-sm text-red-300">{config.last_error}</p>
+              )}
+              {config.status === 'connected' && (
+                <p className="text-xs text-sky-300 inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Pronto para uso no assistente de fluxos
+                </p>
+              )}
+            </div>
           )}
         </Card>
 
-        <Card padding="lg">
-          <h3 className="font-medium mb-4">Configuração fixa do sistema</h3>
-          <dl className="grid gap-3 text-sm">
-            {[
-              ['Base URL', config?.base_url ?? 'https://api.deepseek.com'],
-              ['Modelo Chat', config?.chat_model ?? 'deepseek-chat'],
-              ['Modelo Pensamento', config?.reasoner_model ?? 'deepseek-reasoner'],
-              ['Endpoint Chat', config?.chat_endpoint ?? 'https://api.deepseek.com/v1/chat/completions'],
-            ].map(([label, value]) => (
-              <div key={label} className="flex flex-col sm:flex-row sm:gap-4">
-                <dt className="text-wa-muted shrink-0 sm:w-36">{label}</dt>
-                <dd className="font-mono text-xs text-gray-300 break-all">{value}</dd>
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+          <Card padding="lg">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-wa-green/15 flex items-center justify-center">
+                <KeyRound className="w-4 h-4 text-wa-green" />
               </div>
-            ))}
-          </dl>
-        </Card>
+              <div>
+                <h3 className="text-sm font-semibold text-white">API Token</h3>
+                <p className="text-[11px] text-wa-muted">Cole o token gerado no painel DeepSeek</p>
+              </div>
+            </div>
 
-        <Card padding="lg">
-          <div className="flex items-center gap-2 mb-4">
-            <KeyRound className="w-5 h-5 text-wa-green" />
-            <h3 className="font-medium">API Token</h3>
-          </div>
+            {saveSuccess && (
+              <div className="mb-4 p-3 rounded-lg bg-sky-900/30 border border-sky-700/50 text-xs text-sky-300 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                Token salvo e validado com sucesso.
+              </div>
+            )}
 
-          <Input
-            type="password"
-            label="Token DeepSeek"
-            placeholder="sk-..."
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            autoComplete="off"
-          />
+            <Input
+              type="password"
+              label="Token DeepSeek"
+              placeholder="sk-..."
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              autoComplete="off"
+            />
 
-          {saveError && (
-            <p className="text-red-400 text-sm mt-3">{saveError}</p>
-          )}
+            {saveError && (
+              <p className="text-red-300 text-sm mt-3">{saveError}</p>
+            )}
 
-          <Button
-            className="mt-4"
-            onClick={() => saveMutation.mutate()}
-            loading={saveMutation.isPending}
-            disabled={!apiKey.trim()}
-          >
-            <Save className="w-4 h-4" />
-            Salvar e conectar
-          </Button>
-        </Card>
+            <Button
+              className="mt-4 w-full sm:w-auto"
+              onClick={() => saveMutation.mutate()}
+              loading={saveMutation.isPending}
+              disabled={!apiKey.trim()}
+            >
+              <Save className="w-4 h-4" />
+              Salvar e conectar
+            </Button>
+          </Card>
+
+          <Card padding="lg" className="border-wa-border/80">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-wa-green/15 flex items-center justify-center">
+                <Server className="w-4 h-4 text-wa-green" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">Configuração do sistema</h3>
+                <p className="text-[11px] text-wa-muted">Parâmetros fixos — somente leitura</p>
+              </div>
+            </div>
+
+            <dl className="space-y-3">
+              {configRows.map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-lg bg-wa-dark/40 border border-wa-border/50 px-3 py-2.5"
+                >
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-wa-muted mb-1">
+                    {label}
+                  </dt>
+                  <dd className="font-mono text-xs text-gray-300 break-all inline-flex items-start gap-1.5">
+                    <Link2 className="w-3 h-3 shrink-0 mt-0.5 opacity-60" />
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </Card>
+        </div>
       </div>
     </div>
   )

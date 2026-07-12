@@ -3,7 +3,10 @@ from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.whatsapp.serializers import ChannelSerializer
 
-from .models import Contact, Conversation, ConversationEvent, Message
+from .categories import resolve_conversation_category
+from .models import Contact, Conversation, ConversationEvent, Message, Tag
+from .tag_serializers import ContactTagSerializer
+from .tag_services import assign_tag_to_contact, remove_tag_from_contact, tags_for_contact
 
 
 class ContactSerializer(serializers.ModelSerializer):
@@ -31,8 +34,8 @@ class MessageSerializer(serializers.ModelSerializer):
     if obj.media_file:
       request = self.context.get('request')
       if request:
-        return request.build_absolute_uri(obj.media_file.url)
-      return obj.media_file.url
+        from apps.chat.media_urls import build_signed_media_url
+        return build_signed_media_url(request, obj.id)
     return None
 
 
@@ -43,6 +46,12 @@ class MessageCreateSerializer(serializers.Serializer):
     default=Message.MessageType.TEXT,
   )
   media = serializers.FileField(required=False, allow_null=True)
+
+  def validate(self, attrs):
+    from apps.chat.media_validation import validate_uploaded_media
+    if attrs.get('media'):
+      validate_uploaded_media(attrs['media'])
+    return attrs
 
 
 class ConversationEventSerializer(serializers.ModelSerializer):
@@ -70,16 +79,28 @@ class ConversationSerializer(serializers.ModelSerializer):
   closed_by = UserPublicSerializer(read_only=True)
   team = serializers.SerializerMethodField()
   recent_events = serializers.SerializerMethodField()
+  category = serializers.SerializerMethodField()
+  contact_tags = serializers.SerializerMethodField()
 
   class Meta:
     model = Conversation
     fields = (
       'id', 'channel', 'contact', 'team', 'assigned_to', 'assigned_at', 'status',
       'handoff_pending', 'closed_at', 'closed_by', 'unread_count',
-      'last_message_at', 'last_message_preview', 'recent_events',
-      'created_at', 'updated_at',
+      'last_message_at', 'last_message_preview', 'recent_events', 'category',
+      'contact_tags', 'created_at', 'updated_at',
     )
     read_only_fields = fields
+
+  def get_category(self, obj: Conversation) -> str:
+    return resolve_conversation_category(obj)
+
+  def get_contact_tags(self, obj: Conversation):
+    tags = tags_for_contact(obj.contact)
+    return ContactTagSerializer(
+      [{'id': t.id, 'name': t.name, 'color': t.color} for t in tags],
+      many=True,
+    ).data
 
   def get_team(self, obj):
     if not obj.team_id:

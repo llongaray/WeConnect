@@ -6,23 +6,27 @@ interface ModalProps {
   open: boolean
   onClose: () => void
   title: string
+  description?: string
   children: ReactNode
   className?: string
   step?: number
   totalSteps?: number
+  dismissible?: boolean
 }
 
 export default function Modal({
   open,
   onClose,
   title,
+  description,
   children,
   className,
   step,
   totalSteps,
+  dismissible = true,
 }: ModalProps) {
   useEffect(() => {
-    if (!open) return
+    if (!open || !dismissible) return
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
@@ -32,14 +36,22 @@ export default function Modal({
       document.removeEventListener('keydown', handleEsc)
       document.body.style.overflow = ''
     }
-  }, [open, onClose])
+  }, [open, onClose, dismissible])
+
+  useEffect(() => {
+    if (!open) return
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [open])
 
   if (!open) return null
 
   return (
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
-      onClick={onClose}
+      onClick={dismissible ? onClose : undefined}
     >
       <div
         className={cn(
@@ -51,6 +63,9 @@ export default function Modal({
         <div className="flex items-start justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold">{title}</h3>
+            {description && (
+              <p className="text-sm text-wa-muted mt-1 max-w-prose">{description}</p>
+            )}
             {step !== undefined && totalSteps !== undefined && (
               <div className="flex items-center gap-2 mt-2">
                 {Array.from({ length: totalSteps }).map((_, i) => (
@@ -65,13 +80,15 @@ export default function Modal({
               </div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 text-wa-muted hover:text-white rounded-lg hover:bg-gray-700 transition-colors"
-            aria-label="Fechar"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {dismissible && (
+            <button
+              onClick={onClose}
+              className="p-1 text-wa-muted hover:text-white rounded-lg hover:bg-gray-700 transition-colors"
+              aria-label="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
         {children}
       </div>

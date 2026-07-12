@@ -76,7 +76,7 @@ export const DecisionNode = memo(function DecisionNode({ id, data }: CustomNodeP
           onPointerDown={(e) => e.stopPropagation()}
         />
         <div className="flex justify-between mt-3 text-[10px] text-wa-muted px-1">
-          <span className="text-green-400">Sim</span>
+          <span className="text-sky-400">Sim</span>
           <span className="text-red-400">Não</span>
         </div>
       </div>
@@ -85,7 +85,7 @@ export const DecisionNode = memo(function DecisionNode({ id, data }: CustomNodeP
         position={Position.Bottom}
         id="yes"
         style={{ left: '30%' }}
-        className="!bg-green-500 !w-2.5 !h-2.5"
+        className="!bg-sky-500 !w-2.5 !h-2.5"
       />
       <Handle
         type="source"

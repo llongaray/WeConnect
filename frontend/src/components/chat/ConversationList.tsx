@@ -1,26 +1,55 @@
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
-import type { Channel, Conversation } from '@/types'
+import { MessageSquare, Search } from 'lucide-react'
+import type { Channel, Conversation, ConversationCategory } from '@/types'
 import Avatar from '@/components/ui/Avatar'
 import Badge from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
 import Input from '@/components/ui/Input'
 import { SkeletonList } from '@/components/ui/Skeleton'
+import ChannelFilterDropdown from '@/components/chat/ChannelFilterDropdown'
 import { formatRelativeTime } from '@/lib/formatRelativeTime'
 import { cn } from '@/lib/cn'
-import { MessageSquare } from 'lucide-react'
+import {
+  channelPlatformBadgeVariant,
+  conversationCategoryBadgeVariant,
+  conversationCategoryLabels,
+  getChannelPlatform,
+  getChannelPlatformLabel,
+  getChannelTypeIcon,
+} from '@/lib/channelTypes'
 
 interface Props {
   conversations: Conversation[]
   selectedId: number | null
   onSelect: (id: number) => void
-  filter: string
-  onFilterChange: (filter: string) => void
+  filter: ConversationCategory
+  onFilterChange: (filter: ConversationCategory) => void
   isAdmin: boolean
   channels?: Channel[]
-  channelFilter?: number | ''
-  onChannelFilterChange?: (id: number | '') => void
+  channelFilter?: number[]
+  onChannelFilterChange?: (ids: number[]) => void
   isLoading?: boolean
+}
+
+const CATEGORY_FILTERS: { key: ConversationCategory; label: string }[] = [
+  { key: 'conversando', label: 'Conversando' },
+  { key: 'aguardando', label: 'Aguardando' },
+  { key: 'novo', label: 'Novo' },
+  { key: 'finalizado', label: 'Finalizado' },
+]
+
+function resolveCategory(conv: Conversation): ConversationCategory {
+  if (conv.category) return conv.category
+  if (conv.status === 'closed') return 'finalizado'
+  if (conv.status === 'open' && conv.assigned_to) return 'conversando'
+  if (
+    conv.status === 'open' &&
+    !conv.assigned_to &&
+    (conv.handoff_pending || conv.team)
+  ) {
+    return 'aguardando'
+  }
+  return 'novo'
 }
 
 export default function ConversationList({
@@ -31,20 +60,13 @@ export default function ConversationList({
   onFilterChange,
   isAdmin,
   channels = [],
-  channelFilter = '',
+  channelFilter = [],
   onChannelFilterChange,
   isLoading = false,
 }: Props) {
   const [search, setSearch] = useState('')
 
-  const filters = [
-    { key: 'open', label: 'Abertas' },
-    { key: 'mine', label: 'Minhas' },
-    { key: 'unassigned', label: 'Fila' },
-    { key: 'handoff', label: 'Aguardando' },
-    { key: 'closed', label: 'Fechadas' },
-    ...(isAdmin ? [{ key: 'all', label: 'Todas' }] : []),
-  ]
+  const filters = CATEGORY_FILTERS
 
   const filteredConversations = useMemo(() => {
     if (!search.trim()) return conversations
@@ -70,20 +92,11 @@ export default function ConversationList({
         />
 
         {isAdmin && channels.length > 0 && onChannelFilterChange && (
-          <select
-            value={channelFilter}
-            onChange={(e) =>
-              onChannelFilterChange(e.target.value ? Number(e.target.value) : '')
-            }
-            className="w-full px-2 py-1.5 text-xs bg-gray-800 border border-wa-border rounded-lg focus:outline-none focus:border-wa-green"
-          >
-            <option value="">Todos os canais</option>
-            {channels.map((ch) => (
-              <option key={ch.id} value={ch.id}>
-                {ch.name}
-              </option>
-            ))}
-          </select>
+          <ChannelFilterDropdown
+            channels={channels}
+            selectedIds={channelFilter}
+            onChange={onChannelFilterChange}
+          />
         )}
 
         <div className="flex gap-1 flex-wrap">
@@ -123,6 +136,11 @@ export default function ConversationList({
         {!isLoading &&
           filteredConversations.map((conv, index) => {
             const displayName = conv.contact.name || conv.contact.phone
+            const category = resolveCategory(conv)
+            const ChannelIcon = conv.channel
+              ? getChannelTypeIcon(conv.channel.channel_type)
+              : null
+
             return (
               <button
                 key={conv.id}
@@ -147,18 +165,44 @@ export default function ConversationList({
                     </div>
 
                     {conv.channel && (
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        <Badge variant="default" className="text-[10px]">
+                      <div className="flex gap-1 mt-1 flex-wrap items-center">
+                        <Badge
+                          variant={conversationCategoryBadgeVariant[category]}
+                          className="text-[10px]"
+                        >
+                          {conversationCategoryLabels[category]}
+                        </Badge>
+                        <Badge variant="default" className="text-[10px] gap-1">
+                          {ChannelIcon && <ChannelIcon className="w-3 h-3" />}
                           {conv.channel.name}
                         </Badge>
-                        {conv.status === 'closed' && (
-                          <Badge variant="default" className="text-[10px]">Fechada</Badge>
-                        )}
-                        {conv.handoff_pending && conv.status === 'open' && (
-                          <Badge variant="warning" className="text-[10px]">Aguardando</Badge>
-                        )}
+                        <Badge
+                          variant={channelPlatformBadgeVariant[getChannelPlatform(conv.channel.channel_type)]}
+                          className="text-[10px]"
+                        >
+                          {getChannelPlatformLabel(conv.channel.channel_type)}
+                        </Badge>
                         {conv.team && (
                           <Badge variant="info" className="text-[10px]">{conv.team.name}</Badge>
+                        )}
+                      </div>
+                    )}
+
+                    {(conv.contact_tags?.length ?? 0) > 0 && (
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {conv.contact_tags!.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag.id}
+                            className="text-[10px] px-1.5 py-0.5 rounded-full border"
+                            style={{ borderColor: tag.color, color: tag.color }}
+                          >
+                            {tag.name}
+                          </span>
+                        ))}
+                        {(conv.contact_tags?.length ?? 0) > 2 && (
+                          <span className="text-[10px] text-wa-muted">
+                            +{(conv.contact_tags?.length ?? 0) - 2}
+                          </span>
                         )}
                       </div>
                     )}

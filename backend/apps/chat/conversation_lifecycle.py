@@ -5,6 +5,8 @@ from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.accounts.models import Team, TeamMembership, User
+from apps.accounts.services.capabilities import is_platform_operator, user_has_capability
+from apps.accounts.services.tenant_scope import validate_entities_same_company
 from apps.whatsapp.models import Channel
 
 from .models import Contact, Conversation, ConversationEvent
@@ -12,8 +14,12 @@ from .models import Contact, Conversation, ConversationEvent
 
 def get_user_team_ids(user: User) -> set[int]:
     """IDs das equipes em que o usuário é membro."""
-    if user.is_admin:
+    if is_platform_operator(user):
         return set(Team.objects.filter(is_active=True).values_list('id', flat=True))
+    if user.is_gestor and user.company_id:
+        return set(
+            Team.objects.filter(is_active=True, company_id=user.company_id).values_list('id', flat=True),
+        )
     return set(
         TeamMembership.objects.filter(user=user, team__is_active=True).values_list('team_id', flat=True),
     )
@@ -21,7 +27,7 @@ def get_user_team_ids(user: User) -> set[int]:
 
 def get_supervised_team_ids(user: User) -> set[int]:
     """Equipes que o supervisor lidera (membership role supervisor)."""
-    if user.is_admin:
+    if is_platform_operator(user) or user.is_gestor:
         return get_user_team_ids(user)
     if not user.is_supervisor:
         return set()
@@ -35,7 +41,12 @@ def get_supervised_team_ids(user: User) -> set[int]:
 
 
 def user_can_access_conversation(user: User, conversation: Conversation) -> bool:
-    if user.is_admin:
+    if is_platform_operator(user):
+        return True
+    channel_company_id = conversation.channel.company_id
+    if user.company_id and channel_company_id != user.company_id:
+        return False
+    if user.is_gestor:
         return True
     team_ids = get_user_team_ids(user)
     if conversation.team_id and conversation.team_id not in team_ids:
@@ -60,11 +71,11 @@ def user_can_send_message(user: User, conversation: Conversation) -> bool:
 
 
 def user_can_transfer(user: User) -> bool:
-    return user.is_admin or user.is_supervisor
+    return user_has_capability(user, 'transfer_conversations')
 
 
 def user_can_reopen(user: User) -> bool:
-    return user.is_admin or user.is_supervisor
+    return user_has_capability(user, 'reopen_conversations')
 
 
 def _resolve_team_for_channel(channel: Channel) -> Team | None:
@@ -224,6 +235,8 @@ def transfer(
 
     _ensure_access(actor, conversation)
     _ensure_open(conversation)
+
+    validate_entities_same_company(to_user, company=conversation.channel.company)
 
     if conversation.team_id:
         is_member = TeamMembership.objects.filter(

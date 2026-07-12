@@ -1,28 +1,102 @@
-import { useState } from 'react'
-import { Navigate, Outlet } from 'react-router-dom'
-import { Menu, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { useChatSocket } from '@/hooks/useChatSocket'
-import Sidebar from '@/components/layout/Sidebar'
+import { useSidebarPreferences } from '@/hooks/useSidebarPreferences'
+import { restoreSession } from '@/services/auth'
+import AppHeader from '@/components/layout/AppHeader'
+import Sidebar, { roleFilterCategories } from '@/components/layout/Sidebar'
+import PlatformChatWidget from '@/components/platform-chat/PlatformChatWidget'
 import { cn } from '@/lib/cn'
 
+const onboardingNavClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    'px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+    isActive ? 'bg-wa-green/20 text-wa-green' : 'text-wa-muted hover:text-white',
+  )
+
+const onboardingHeaderNav = (
+  <>
+    <NavLink to="/onboarding" className={onboardingNavClass} end>
+      Início
+    </NavLink>
+    <NavLink to="/profile" className={onboardingNavClass}>
+      Perfil
+    </NavLink>
+  </>
+)
+
 export default function AppLayout() {
-  const accessToken = useAuthStore((s) => s.accessToken)
+  const location = useLocation()
+  const user = useAuthStore((s) => s.user)
+  const capabilities = useAuthStore((s) => s.capabilities)
+  const requiresTotpSetup = useAuthStore((s) => s.requiresTotpSetup)
+  const isHydrated = useAuthStore((s) => s.isHydrated)
+  const setHydrated = useAuthStore((s) => s.setHydrated)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const isProfileDuringOnboarding = requiresTotpSetup && location.pathname === '/profile'
   useChatSocket()
 
-  if (!accessToken) {
+  const visibleCategories = useMemo(
+    () => roleFilterCategories(capabilities),
+    [capabilities],
+  )
+
+  const { collapsed, toggleCollapsed, toggleSection, isSectionOpen } =
+    useSidebarPreferences(visibleCategories)
+
+  useEffect(() => {
+    restoreSession().finally(() => setHydrated(true))
+  }, [setHydrated])
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wa-dark text-wa-muted">
+        Carregando sessão...
+      </div>
+    )
+  }
+
+  if (!user) {
     return <Navigate to="/login" replace />
+  }
+
+  if (requiresTotpSetup && !isProfileDuringOnboarding) {
+    return <Navigate to="/onboarding" replace />
+  }
+
+  if (isProfileDuringOnboarding) {
+    return (
+      <div className="min-h-screen flex flex-col bg-wa-dark">
+        <AppHeader center={onboardingHeaderNav} />
+        <main className="flex-1 overflow-auto">
+          <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4 md:py-5 animate-fade-in">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  const sidebarProps = {
+    collapsed,
+    onToggleCollapse: toggleCollapsed,
+    isSectionOpen,
+    onToggleSection: toggleSection,
   }
 
   return (
     <div className="flex h-screen bg-wa-dark">
-      {/* Sidebar desktop */}
-      <div className="hidden lg:flex">
-        <Sidebar />
+      <div
+        className={cn(
+          'hidden lg:flex shrink-0 transition-[width] duration-200',
+          collapsed ? 'w-[4.5rem]' : 'w-64',
+        )}
+      >
+        <Sidebar {...sidebarProps} showCollapseToggle />
       </div>
 
-      {/* Sidebar mobile drawer */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-40 flex">
           <div
@@ -30,23 +104,22 @@ export default function AppLayout() {
             onClick={() => setSidebarOpen(false)}
           />
           <div className="relative z-50 animate-slide-in-right">
-            <Sidebar onNavigate={() => setSidebarOpen(false)} />
+            <Sidebar
+              {...sidebarProps}
+              collapsed={false}
+              onNavigate={() => setSidebarOpen(false)}
+              showCollapseToggle={false}
+            />
           </div>
         </div>
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header mobile */}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-wa-panel border-b border-wa-border shrink-0">
-          <button
-            onClick={() => setSidebarOpen((v) => !v)}
-            className="p-2 rounded-lg hover:bg-wa-dark transition-colors"
-            aria-label="Menu"
-          >
-            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-          <span className="font-semibold text-wa-green">MoneyConnect</span>
-        </header>
+        <AppHeader
+          showMenuButton
+          sidebarOpen={sidebarOpen}
+          onMenuClick={() => setSidebarOpen((v) => !v)}
+        />
 
         <main className="flex-1 overflow-hidden">
           <div className={cn('h-full animate-fade-in')}>
@@ -54,6 +127,7 @@ export default function AppLayout() {
           </div>
         </main>
       </div>
+      <PlatformChatWidget />
     </div>
   )
 }

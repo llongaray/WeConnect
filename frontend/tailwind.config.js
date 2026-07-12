@@ -3,17 +3,34 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+      },
       colors: {
+        // Tokens legados wa-* remapeados para paleta Aray
         wa: {
-          green: '#25D366',
-          dark: '#111B21',
-          panel: '#202C33',
-          chat: '#0B141A',
-          bubble: '#005C4B',
-          bubbleIn: '#202C33',
-          muted: '#8696A0',
-          border: '#2A3942',
-          accent: '#00A884',
+          green: '#00A3FF',
+          dark: '#020617',
+          panel: '#0A1628',
+          chat: '#050A14',
+          bubble: '#0B4F8A',
+          bubbleIn: '#0F1D32',
+          muted: '#94A3B8',
+          border: '#1E3A5F',
+          accent: '#FFB800',
+        },
+        aray: {
+          primary: '#00A3FF',
+          'primary-dark': '#0047AB',
+          accent: '#FFB800',
+          'accent-muted': '#FFA500',
+          dark: '#020617',
+          panel: '#0A1628',
+          chat: '#050A14',
+          bubble: '#0B4F8A',
+          bubbleIn: '#0F1D32',
+          muted: '#94A3B8',
+          border: '#1E3A5F',
         },
       },
       fontSize: {
@@ -28,8 +45,9 @@ export default {
       },
       boxShadow: {
         panel: '0 4px 24px rgba(0, 0, 0, 0.35)',
-        'glow-green': '0 0 24px rgba(37, 211, 102, 0.25)',
-        'glow-green-lg': '0 0 48px rgba(37, 211, 102, 0.15)',
+        'glow-green': '0 0 24px rgba(0, 163, 255, 0.25)',
+        'glow-green-lg': '0 0 48px rgba(0, 163, 255, 0.15)',
+        'glow-accent': '0 0 24px rgba(255, 184, 0, 0.2)',
       },
       keyframes: {
         'fade-in': {
@@ -52,6 +70,10 @@ export default {
           '0%, 100%': { opacity: '0.4' },
           '50%': { opacity: '0.8' },
         },
+        'progress-indeterminate': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(400%)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 0.3s ease-out forwards',
@@ -59,6 +81,7 @@ export default {
         'slide-in-right': 'slide-in-right 0.25s ease-out forwards',
         shimmer: 'shimmer 1.5s infinite linear',
         'glow-pulse': 'glow-pulse 4s ease-in-out infinite',
+        'progress-indeterminate': 'progress-indeterminate 1.2s ease-in-out infinite',
       },
     },
   },

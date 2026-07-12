@@ -33,9 +33,13 @@ import type { BotFlow, BotNodeType, GeneratedBotFlow } from '@/types'
 import { nodeTypes } from '@/components/chatbot/FlowNodes'
 import { ChatbotChannelContext } from '@/components/chatbot/chatbotChannelContext'
 import FlowAssistantChat from '@/components/chatbot/FlowAssistantChat'
+import CompanyScopePrompt, { useRequiresCompanyScope } from '@/components/admin/CompanyScopePrompt'
 import Button from '@/components/ui/Button'
+import Card from '@/components/ui/Card'
 import EmptyState from '@/components/ui/EmptyState'
 import PageHeader from '@/components/ui/PageHeader'
+import { getActiveCompanyId } from '@/lib/companyContext'
+import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/cn'
 import { validateBotFlow } from '@/lib/validateBotFlow'
 
@@ -71,6 +75,10 @@ function createDefaultFlow(channelId: number) {
 function FlowCanvas() {
   const { fitView } = useReactFlow()
   const queryClient = useQueryClient()
+  const companyId = getActiveCompanyId()
+  const selectedCompanyId = useAuthStore((s) => s.selectedCompanyId)
+  const showScopePrompt = useRequiresCompanyScope()
+  const queriesEnabled = !showScopePrompt
   const [selectedChannelId, setSelectedChannelId] = useState<number | ''>('')
   const [currentFlow, setCurrentFlow] = useState<BotFlow | null>(null)
   const [startNodeId, setStartNodeId] = useState('')
@@ -85,13 +93,15 @@ function FlowCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
   const { data: channels = [] } = useQuery({
-    queryKey: ['channels'],
-    queryFn: fetchChannels,
+    queryKey: ['channels', companyId],
+    queryFn: () => fetchChannels(),
+    enabled: queriesEnabled,
   })
 
   const { data: teamsData } = useQuery({
-    queryKey: ['teams'],
+    queryKey: ['teams', companyId],
     queryFn: fetchTeams,
+    enabled: queriesEnabled,
   })
 
   const channelTeams = useMemo(() => {
@@ -105,11 +115,19 @@ function FlowCanvas() {
   }, [teamsData, selectedChannelId])
 
   const { data: flows = [], isLoading: flowsLoading, isError: flowsError } = useQuery({
-    queryKey: ['bot-flows', selectedChannelId],
+    queryKey: ['bot-flows', companyId, selectedChannelId],
     queryFn: () => fetchBotFlows(Number(selectedChannelId)),
-    enabled: !!selectedChannelId,
+    enabled: queriesEnabled && !!selectedChannelId,
     retry: false,
   })
+
+  useEffect(() => {
+    setSelectedChannelId('')
+    loadedKeyRef.current = null
+    setCurrentFlow(null)
+    setNodes([])
+    setEdges([])
+  }, [selectedCompanyId, setNodes, setEdges])
 
   useEffect(() => {
     if (flowsError) {
@@ -306,26 +324,58 @@ function FlowCanvas() {
     [fitView, setNodes, setEdges],
   )
 
+  if (showScopePrompt) {
+    return (
+      <CompanyScopePrompt
+        title="Selecione uma empresa"
+        description="Use o seletor de empresa no topo para configurar fluxos de chatbot."
+      />
+    )
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-wa-border shrink-0">
+      <div className="p-4 sm:p-6 border-b border-wa-border shrink-0">
+        <div className="max-w-6xl">
         <PageHeader
           title="Chatbot"
           description="Configure fluxos automáticos por canal. O bot responde quando nenhum atendente assumiu a conversa."
         />
 
         {channels.length === 0 ? (
-          <EmptyState
-            icon={Bot}
-            title="Nenhum canal disponível"
-            description="Crie um canal WhatsApp antes de configurar o chatbot."
-            action={
-              <Link to="/admin/channels">
-                <Button>Ir para Canais</Button>
-              </Link>
-            }
-            className="py-8"
-          />
+          <div className="max-w-lg mx-auto mt-4">
+            <Card padding="lg" className="border-dashed border-wa-border/80 text-center">
+              <EmptyState
+                icon={Bot}
+                title="Nenhum canal disponível"
+                description="Para configurar fluxos automáticos, primeiro crie e conecte um canal WhatsApp."
+                action={
+                  <div className="space-y-4">
+                    <ol className="text-left text-xs text-wa-muted space-y-2 max-w-xs mx-auto">
+                      <li className="flex gap-2">
+                        <span className="w-5 h-5 rounded-full bg-wa-green/20 text-wa-green text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+                        Acesse Canais e crie um canal WhatsApp
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="w-5 h-5 rounded-full bg-wa-green/20 text-wa-green text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+                        Conecte via QR Code ou Meta Cloud API
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="w-5 h-5 rounded-full bg-wa-green/20 text-wa-green text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                        Volte aqui para montar o fluxo do bot
+                      </li>
+                    </ol>
+                    <Link to="/admin/channels">
+                      <Button>
+                        <Bot className="w-4 h-4" />
+                        Ir para Canais
+                      </Button>
+                    </Link>
+                  </div>
+                }
+              />
+            </Card>
+          </div>
         ) : (
           <div className="flex flex-wrap items-end gap-3">
             <div>
@@ -399,6 +449,7 @@ function FlowCanvas() {
         {saveError && (
           <p className="text-red-400 text-sm mt-2">{saveError}</p>
         )}
+        </div>
       </div>
 
       {selectedChannelId && !flowsError && (
@@ -441,7 +492,7 @@ function FlowCanvas() {
               onConnect={onConnect}
               nodeTypes={nodeTypes}
               className="bg-wa-chat"
-              defaultEdgeOptions={{ animated: true, style: { stroke: '#25D366' } }}
+              defaultEdgeOptions={{ animated: true, style: { stroke: '#00A3FF' } }}
             >
               <Background gap={20} size={1} color="#2A3942" />
               <Controls className="!bg-wa-panel !border-wa-border !shadow-panel" />

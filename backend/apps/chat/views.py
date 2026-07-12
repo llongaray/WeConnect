@@ -9,6 +9,9 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 
+from apps.accounts.permissions import CanManageLgpd, CanViewContacts, IsGestorOrSuperUser
+from apps.accounts.services.capabilities import is_platform_operator
+
 from .conversation_lifecycle import (
     assume,
     close,
@@ -20,7 +23,10 @@ from .conversation_lifecycle import (
     user_can_access_conversation,
 )
 from .message_service import send_outbound_message
-from .models import Contact, Conversation, ConversationEvent, Message
+from .categories import category_filter_q
+from .tag_serializers import ConversationTagAssignSerializer
+from .tag_services import assign_tag_to_contact, remove_tag_from_contact
+from .models import Contact, Conversation, ConversationEvent, Message, Tag
 from .permissions import CanSendMessage, IsConversationAccessible
 from .serializers import (
     CloseSerializer,
@@ -40,10 +46,36 @@ class MessageCursorPagination(CursorPagination):
 
 
 class ContactViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Contact.objects.all()
     serializer_class = ContactSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewContacts]
     search_fields = ['name', 'phone', 'external_id']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Contact.objects.select_related('channel__company')
+        if is_platform_operator(user):
+            company_id = self.request.query_params.get('company_id')
+            if company_id:
+                return qs.filter(channel__company_id=company_id)
+            return qs.none()
+        if user.company_id:
+            return qs.filter(channel__company_id=user.company_id)
+        return qs.none()
+
+    @action(detail=True, methods=['get'], url_path='export-data')
+    def export_data(self, request, pk=None):
+        """Exportação de dados do titular (LGPD Art. 18 V)."""
+        contact = self.get_object()
+        from apps.chat.services.lgpd import export_contact_data
+        return Response(export_contact_data(contact))
+
+    @action(detail=True, methods=['post'], url_path='erase', permission_classes=[IsAuthenticated, CanManageLgpd])
+    def erase(self, request, pk=None):
+        """Exclusão de dados do titular (LGPD Art. 18 VI)."""
+        contact = self.get_object()
+        from apps.chat.services.lgpd import erase_contact_data
+        erase_contact_data(contact, actor=request.user, request=request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ConversationViewSet(viewsets.ModelViewSet):
@@ -67,30 +99,47 @@ class ConversationViewSet(viewsets.ModelViewSet):
             ),
         )
 
-        channel_id = self.request.query_params.get('channel')
-        if channel_id:
-            qs = qs.filter(channel_id=channel_id)
+        channel_ids = self.request.query_params.getlist('channel')
+        if channel_ids:
+          try:
+            ids = [int(cid) for cid in channel_ids if str(cid).strip()]
+          except ValueError:
+            ids = []
+          if ids:
+            qs = qs.filter(channel_id__in=ids)
 
         status_filter = self.request.query_params.get('status')
         filtro = self.request.query_params.get('filter')
+        category = self.request.query_params.get('category')
 
-        if status_filter:
-            qs = qs.filter(status=status_filter)
+        if category:
+          qs = qs.filter(category_filter_q(category))
+        elif status_filter:
+          qs = qs.filter(status=status_filter)
         elif filtro == 'closed':
-            qs = qs.filter(status=Conversation.Status.CLOSED)
+          qs = qs.filter(status=Conversation.Status.CLOSED)
         elif filtro == 'all':
-            pass
+          pass
         else:
-            qs = qs.filter(status=Conversation.Status.OPEN)
+          qs = qs.filter(status__in=[Conversation.Status.OPEN, Conversation.Status.BOT])
 
         if filtro == 'mine':
-            qs = qs.filter(assigned_to=user)
+          qs = qs.filter(assigned_to=user)
         elif filtro == 'unassigned':
-            qs = qs.filter(assigned_to__isnull=True, status=Conversation.Status.OPEN)
+          qs = qs.filter(assigned_to__isnull=True, status=Conversation.Status.OPEN)
         elif filtro == 'closed':
-            qs = qs.filter(status=Conversation.Status.CLOSED)
+          qs = qs.filter(status=Conversation.Status.CLOSED)
         elif filtro == 'handoff':
-            qs = qs.filter(handoff_pending=True, status=Conversation.Status.OPEN)
+          qs = qs.filter(handoff_pending=True, status=Conversation.Status.OPEN)
+
+        if user.is_gestor and user.company_id:
+            qs = qs.filter(channel__company_id=user.company_id)
+        elif is_platform_operator(user):
+            company_id = self.request.query_params.get('company_id')
+            if company_id:
+                qs = qs.filter(channel__company_id=company_id)
+            else:
+                return qs.none()
 
         if not user.is_admin:
             team_ids = get_user_team_ids(user)
@@ -241,6 +290,40 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conversation = self.get_object()
         events = conversation.events.select_related('actor', 'from_user', 'to_user')[:50]
         return Response(ConversationEventSerializer(events, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='tags')
+    def assign_tag(self, request, pk=None):
+        conversation = self.get_object()
+        serializer = ConversationTagAssignSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            tag = Tag.objects.get(
+                pk=serializer.validated_data['tag_id'],
+                company_id=conversation.channel.company_id,
+                is_active=True,
+            )
+        except Tag.DoesNotExist:
+            return Response({'detail': 'Tag não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            assign_tag_to_contact(conversation.contact, tag, request.user)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        conversation.refresh_from_db()
+        return Response(ConversationSerializer(conversation, context={'request': request}).data)
+
+    @action(detail=True, methods=['delete'], url_path='tags/(?P<tag_id>[^/.]+)')
+    def remove_tag(self, request, pk=None, tag_id=None):
+        conversation = self.get_object()
+        try:
+            tag = Tag.objects.get(
+                pk=tag_id,
+                company_id=conversation.channel.company_id,
+            )
+        except Tag.DoesNotExist:
+            return Response({'detail': 'Tag não encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        remove_tag_from_contact(conversation.contact, tag)
+        conversation.refresh_from_db()
+        return Response(ConversationSerializer(conversation, context={'request': request}).data)
 
     @action(
         detail=True,

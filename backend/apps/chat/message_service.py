@@ -15,6 +15,8 @@ def _extract_external_id_from_result(channel, result: dict) -> str:
     if messages:
       return messages[0].get('id', '')
     return ''
+  if channel.is_meta_messaging:
+    return result.get('message_id', '')
 
   key = result.get('key', {})
   external_id = f"{key.get('remoteJid', '')}:{key.get('id', '')}"
@@ -24,6 +26,8 @@ def _extract_external_id_from_result(channel, result: dict) -> str:
 def _resolve_recipient(channel, contact) -> str:
   """Define destinatário para envio conforme o provider."""
   external_id = contact.external_id or ''
+  if channel.is_meta_messaging:
+    return external_id
   if channel.is_evolution:
     if external_id.endswith('@lid'):
       return external_id
@@ -41,6 +45,19 @@ def _format_agent_whatsapp_text(user, content: str) -> str:
     display = (user.get_full_name() or '').strip() or user.username
     body = (content or '').strip()
     return f'*{display}*\n{body}' if body else f'*{display}*'
+
+
+def _format_agent_messaging_text(user, content: str) -> str:
+    """Formata texto para Messenger/Instagram."""
+    display = (user.get_full_name() or '').strip() or user.username
+    body = (content or '').strip()
+    return f'{display}: {body}' if body else display
+
+
+def _format_agent_text(channel, user, content: str) -> str:
+    if channel.is_meta_messaging:
+        return _format_agent_messaging_text(user, content)
+    return _format_agent_whatsapp_text(user, content)
 
 
 def send_outbound_message(user, conversation: Conversation, validated_data: dict, *, force: bool = False) -> Message:
@@ -72,8 +89,8 @@ def send_outbound_message(user, conversation: Conversation, validated_data: dict
 
   try:
     if message_type == Message.MessageType.TEXT:
-      whatsapp_text = _format_agent_whatsapp_text(user, content)
-      result = provider.send_text(recipient, whatsapp_text)
+      outbound_text = _format_agent_text(channel, user, content)
+      result = provider.send_text(recipient, outbound_text)
     else:
       message.media_file = media_file
       message.save(update_fields=['media_file'])
@@ -82,7 +99,7 @@ def send_outbound_message(user, conversation: Conversation, validated_data: dict
       mediatype = message_type
       if mediatype == Message.MessageType.STICKER:
         mediatype = 'image'
-      caption = _format_agent_whatsapp_text(user, content) if content.strip() else ''
+      caption = _format_agent_text(channel, user, content) if content.strip() else ''
       result = provider.send_media(
         number=recipient,
         mediatype=mediatype,
